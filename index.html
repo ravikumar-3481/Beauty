@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elegance Studio - Work Gallery</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Poppins:wght@300;400;500&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #fdf2f8;
+        }
+        h1, h2, h3 {
+            font-family: 'Playfair Display', serif;
+        }
+        
+        /* Skeleton Loading Animation */
+        .skeleton {
+            background: linear-gradient(90deg, #fce7f3 25%, #fbcfe8 50%, #fce7f3 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+        }
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .gallery-image {
+            transition: transform 0.4s ease;
+        }
+        .gallery-card:hover .gallery-image {
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body class="min-h-screen pb-16 text-gray-800">
+
+    <header class="bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-pink-100 shadow-sm">
+        <div class="max-w-6xl mx-auto px-4 py-4 text-center">
+            <h1 class="text-3xl text-pink-600 font-bold tracking-wide">Elegance Studio Gallery</h1>
+            <p class="text-sm text-gray-500 mt-1">Our latest beauty and styling work</p>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 mt-8">
+        
+        <div id="galleryGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            </div>
+
+        <div id="initialLoader" class="flex justify-center items-center py-20 hidden">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500"></div>
+        </div>
+
+        <div class="mt-12 text-center">
+            <button id="loadMoreBtn" class="hidden bg-pink-500 hover:bg-pink-600 text-white px-8 py-3 rounded-full font-medium shadow-lg hover:shadow-pink-300 transition-all transform hover:-translate-y-1">
+                Show More Works
+            </button>
+            <p id="noMoreData" class="hidden text-gray-400 text-sm mt-4 italic">No more images to show.</p>
+        </div>
+
+    </main>
+
+    <script>
+        // Aapki Google Sheet ki ID
+        const SHEET_ID = "1pGz8oqYP_WuxDUN5lwmye8-9pKcAiA4SIgSR4tIDr80";
+        // Google Visualization API ka endpoint
+        const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
+
+        let allData = [];
+        let currentIndex = 0;
+        const itemsPerPage = 10; // Ek baar mein 10 images
+
+        const galleryGrid = document.getElementById('galleryGrid');
+        const loadMoreBtn = document.getElementById('loadMoreBtn');
+        const initialLoader = document.getElementById('initialLoader');
+        const noMoreData = document.getElementById('noMoreData');
+
+        // Page load hote hi data fetch karna start karein
+        document.addEventListener('DOMContentLoaded', fetchSheetData);
+
+        async function fetchSheetData() {
+            initialLoader.classList.remove('hidden');
+            
+            try {
+                const response = await fetch(SHEET_URL);
+                const text = await response.text();
+                
+                // Google ka response ek JS function wrap mein aata hai, usme se JSON nikalna
+                const jsonString = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+                const jsonData = JSON.parse(jsonString);
+
+                // Rows extract karna aur header row ko chhodna (agar wahan values hain toh)
+                let rows = jsonData.table.rows;
+                
+                // Clean data banakar array mein dalna
+                rows.forEach(row => {
+                    // Agar row khali hai toh skip karein
+                    if (!row.c || !row.c[3] || !row.c[3].v) return;
+
+                    const serviceName = row.c[1] ? row.c[1].v : "Service";
+                    const workerName = row.c[2] ? row.c[2].v : "Staff";
+                    const driveLink = row.c[3].v;
+
+                    // Header row ko exclude karna (agar usme "Image Link" text likha hai)
+                    if (driveLink.includes("Image Link") || !driveLink.includes("drive.google.com")) return;
+
+                    const imageUrl = convertDriveLinkToImageSrc(driveLink);
+
+                    allData.push({ serviceName, workerName, imageUrl });
+                });
+
+                // LATEST FIRST: Array ko reverse kar dein taki sabse naye entries pehle aayen
+                allData.reverse();
+
+                initialLoader.classList.add('hidden');
+                
+                // Pehli 10 images render karein
+                renderItems();
+
+            } catch (error) {
+                console.error("Data fetch error:", error);
+                galleryGrid.innerHTML = `<div class="col-span-full text-center text-red-500 p-10 bg-red-50 rounded-xl">Data load nahi ho paya. Kripya check karein ki Google Sheet public (Anyone with link) hai ya nahi.</div>`;
+                initialLoader.classList.add('hidden');
+            }
+        }
+
+        // Drive URL ko Direct Image URL mein convert karne wala function
+        function convertDriveLinkToImageSrc(url) {
+            // URL se File ID nikalna
+            const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+            if (match && match[1]) {
+                const fileId = match[1];
+                // Google Drive ka direct image render link bananna
+                return `https://drive.google.com/uc?export=view&id=${fileId}`;
+            }
+            return url; // Agar ID na mile toh jaisa hai waisa return kar do
+        }
+
+        function renderItems() {
+            const fragment = document.createDocumentFragment();
+            const endIndex = Math.min(currentIndex + itemsPerPage, allData.length);
+
+            for (let i = currentIndex; i < endIndex; i++) {
+                const item = allData[i];
+                
+                // Card Element create karna
+                const card = document.createElement('div');
+                card.className = "gallery-card bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-shadow border border-pink-50 relative group cursor-pointer";
+                
+                card.innerHTML = `
+                    <div class="relative h-64 w-full bg-pink-50 skeleton overflow-hidden">
+                        <img src="${item.imageUrl}" alt="${item.serviceName}" 
+                             class="gallery-image absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-500"
+                             onload="this.classList.remove('opacity-0'); this.parentElement.classList.remove('skeleton');"
+                             onerror="this.src='https://via.placeholder.com/400x300?text=Image+Not+Found'">
+                    </div>
+                    <div class="p-5">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="text-lg font-bold text-gray-800">${item.serviceName}</h3>
+                                <p class="text-sm text-pink-500 mt-1 flex items-center gap-1">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                                    ${item.workerName}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                fragment.appendChild(card);
+            }
+
+            galleryGrid.appendChild(fragment);
+            currentIndex = endIndex;
+
+            // Load More button logic
+            if (currentIndex >= allData.length) {
+                loadMoreBtn.classList.add('hidden');
+                if(allData.length > 0) noMoreData.classList.remove('hidden');
+            } else {
+                loadMoreBtn.classList.remove('hidden');
+            }
+        }
+
+        // Button Click Event
+        loadMoreBtn.addEventListener('click', () => {
+            // Thoda loading feel dene ke liye button text change
+            const originalText = loadMoreBtn.innerText;
+            loadMoreBtn.innerText = "Loading...";
+            
+            setTimeout(() => {
+                renderItems();
+                loadMoreBtn.innerText = originalText;
+            }, 500); // 0.5 sec delay
+        });
+    </script>
+</body>
+</html>
